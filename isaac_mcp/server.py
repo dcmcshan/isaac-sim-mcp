@@ -35,6 +35,7 @@ from typing import AsyncIterator, Dict, Any, List
 import os
 from pathlib import Path
 import base64
+import subprocess
 from urllib.parse import urlparse
 
 # Configure logging
@@ -275,6 +276,45 @@ def get_scene_info(ctx: Context) -> str:
         logger.error(f"Error getting scene info from Isaac: {str(e)}")
         # return f"Error getting scene info: {str(e)}"
         return json.dumps({"status": "error", "error": str(e), "message": "Error getting scene info"})
+
+@mcp.tool()
+def open_webrtc_ports(
+    security_group: str = "isaacsim-sg",
+    region: str = "us-east-1",
+    cidr: str = "0.0.0.0/0",
+) -> str:
+    """Open WebRTC streaming ports (3009, 8211, 49100) in the AWS security group so the Isaac Sim WebRTC client can connect directly to the Spot instance (faster than SSH tunnel). Requires AWS CLI configured. Run from your Mac."""
+    ports = [3009, 8211, 49100]
+    results = []
+    for port in ports:
+        try:
+            out = subprocess.run(
+                [
+                    "aws", "ec2", "authorize-security-group-ingress",
+                    "--region", region,
+                    "--group-name", security_group,
+                    "--protocol", "tcp",
+                    "--port", str(port),
+                    "--cidr", cidr,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if out.returncode == 0:
+                results.append(f"TCP {port}: OK")
+            else:
+                if "Duplicate" in (out.stderr or "") or "already exists" in (out.stderr or "").lower():
+                    results.append(f"TCP {port}: already open")
+                else:
+                    results.append(f"TCP {port}: {out.stderr or out.stdout or 'failed'}")
+        except FileNotFoundError:
+            return "AWS CLI not found. Install it (e.g. brew install awscli) and configure credentials."
+        except subprocess.TimeoutExpired:
+            results.append(f"TCP {port}: timeout")
+        except Exception as e:
+            results.append(f"TCP {port}: {e}")
+    return "WebRTC ports: " + "; ".join(results) + ". Connect client to your Spot IP (e.g. from spot_ip.txt). Keep tunnel for MCP (8766)."
 
 @mcp.tool()
 def capture_screenshot(ctx: Context, save_path: str = "") -> str:
