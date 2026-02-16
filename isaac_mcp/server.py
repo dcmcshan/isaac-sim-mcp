@@ -274,7 +274,57 @@ def get_scene_info(ctx: Context) -> str:
     except Exception as e:
         logger.error(f"Error getting scene info from Isaac: {str(e)}")
         # return f"Error getting scene info: {str(e)}"
-        return {"status": "error", "error": str(e), "message": "Error getting scene info"}
+        return json.dumps({"status": "error", "error": str(e), "message": "Error getting scene info"})
+
+@mcp.tool()
+def capture_screenshot(ctx: Context, save_path: str = "") -> str:
+    """Capture the current Isaac Sim viewport and save as PNG. Requires an active viewport (Isaac Sim window with the MCP extension running).
+    Returns the path where the image was saved, or an error message."""
+    CAPTURE_CODE = '''
+from omni.kit.viewport.utility import get_active_viewport, capture_viewport_to_file
+import time
+import base64
+path = "/home/ubuntu/g1_screenshot.png"
+result = None
+try:
+    viewport = get_active_viewport()
+    if viewport:
+        capture_viewport_to_file(viewport, path)
+        time.sleep(3)
+        import os
+        if os.path.isfile(path):
+            with open(path, "rb") as f:
+                result = base64.b64encode(f.read()).decode("utf-8")
+        else:
+            result = "CAPTURE_NO_FILE"
+    else:
+        result = "NO_ACTIVE_VIEWPORT"
+except Exception as e:
+    result = "ERROR: " + str(e)
+'''
+    try:
+        isaac = get_isaac_connection()
+        raw = isaac.send_command("execute_script", {"code": CAPTURE_CODE})
+        # send_command returns response["result"] from extension (the script's result variable)
+        res = raw.get("result", raw) if isinstance(raw, dict) else raw
+        if res is None:
+            return "Capture returned no result"
+        if not isinstance(res, str):
+            res = str(res)
+        if res.startswith("ERROR:") or res.startswith("NO_ACTIVE") or res == "CAPTURE_NO_FILE":
+            return res
+        try:
+            data = base64.b64decode(res)
+        except Exception:
+            return res
+        out = Path(save_path) if save_path else (Path(__file__).resolve().parent.parent / "screenshot.png")
+        out = out.expanduser().resolve()
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(data)
+        return f"Saved to {out}"
+    except Exception as e:
+        logger.error(f"Error capturing screenshot: {str(e)}")
+        return f"Error capturing screenshot: {str(e)}"
 
 # @mcp.tool()
 # def get_object_info(ctx: Context, object_name: str) -> str:
