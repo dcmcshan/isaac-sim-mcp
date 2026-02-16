@@ -316,6 +316,39 @@ def open_webrtc_ports(
             results.append(f"TCP {port}: {e}")
     return "WebRTC ports: " + "; ".join(results) + ". Connect client to your Spot IP (e.g. from spot_ip.txt). Keep tunnel for MCP (8766)."
 
+def _get_spot_ip(ip: str, spot_ip_file: str = "") -> str:
+    """Resolve Spot IP from param, or spot_ip.txt in common project paths."""
+    if ip:
+        return ip.strip()
+    for path in [
+        spot_ip_file,
+        os.environ.get("UNITREE_G1_ROOT", "") + "/spot_ip.txt",
+        os.path.expanduser("~/GitHub/UnitreeG1/spot_ip.txt"),
+        os.path.expanduser("~/UnitreeG1/spot_ip.txt"),
+    ]:
+        if path and os.path.isfile(path):
+            try:
+                return open(path).read().strip()
+            except Exception:
+                pass
+    return ""
+
+@mcp.tool()
+def launch_webrtc_client(ip: str = "", spot_ip_file: str = "") -> str:
+    """Launch the Isaac Sim WebRTC Streaming Client on macOS. Optional ip (or spot_ip_file path to spot_ip.txt): the IP to connect to in the client. If not set, looks for ~/GitHub/UnitreeG1/spot_ip.txt and uses that, else 127.0.0.1 for tunnel."""
+    resolved = _get_spot_ip(ip, spot_ip_file)
+    if not resolved:
+        resolved = "127.0.0.1"
+    try:
+        subprocess.run(
+            ["open", "-a", "isaacsim-webrtc-streaming-client"],
+            capture_output=True,
+            timeout=5,
+        )
+    except FileNotFoundError:
+        return "Isaac Sim WebRTC Streaming Client not found. Install from NVIDIA Isaac Sim download page."
+    return f"Launched Isaac Sim WebRTC Streaming Client. Connect to {resolved} in the app."
+
 @mcp.tool()
 def capture_screenshot(ctx: Context, save_path: str = "") -> str:
     """Capture the current Isaac Sim viewport and save as PNG. Requires an active viewport (Isaac Sim window with the MCP extension running).
