@@ -217,9 +217,9 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[Dict[str, Any]]:
         logger.info("Isaac SimMCP server shut down")
 
 # Create the MCP server with lifespan support
+# Note: mcp SDK FastMCP does not accept 'description'; use name and lifespan only.
 mcp = FastMCP(
     "IsaacSimMCP",
-    description="Isaac Sim integration through the Model Context Protocol",
     lifespan=server_lifespan
 )
 
@@ -445,12 +445,16 @@ simulation_context.stop()
         
         result = isaac.send_command("execute_script", {"code": code})
         print("result: ", result)
-        return result
-        # return f"Code executed successfully: {result.get('result', '')}"
+        # Tool expects str; return result payload or message
+        if isinstance(result, dict):
+            res = result.get("result")
+            if res is not None:
+                return str(res) if not isinstance(res, str) else res
+            return result.get("message", json.dumps(result))
+        return str(result)
     except Exception as e:
         logger.error(f"Error executing code: {str(e)}")
-        # return f"Error executing code: {str(e)}"
-        return {"status": "error", "error": str(e), "message": "Error executing code"}
+        return f"Error executing code: {str(e)}"
                 
 @mcp.prompt()
 def asset_creation_strategy() -> str:
